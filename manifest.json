@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.terrifiedbug.omaflip",
+  "name": "OmaFlip",
+  "version": "0.1.0",
+  "author": "TerrifiedBug",
+  "license": "MIT",
+  "description": "Windows-style Alt+Tab across every workspace, most recently used first. Binds itself, no config edits.",
+  "homepage": "https://github.com/TerrifiedBug/omaflip",
+  "kinds": ["panel"],
+  "keepLoaded": true,
+  "entryPoints": { "panel": "OmaFlip.qml" }
+}
