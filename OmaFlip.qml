@@ -3,15 +3,13 @@
 // This is the display half. All key handling and all switch state live in
 // omaflip.lua next to this file, which runs inside Hyprland. This panel loads
 // it with `hyprctl eval` on startup and after every config reload, so the
-// install needs no edit to the Hyprland config. The Lua side writes the switch
-// to $XDG_RUNTIME_DIR/omaflip.json and this panel renders whatever is there.
+// install needs no edit to the Hyprland config. The Lua side sends each step
+// as a Hyprland custom event (`custom>>omaflip:<json>`) on the event socket
+// Quickshell already reads, so a TAB costs no process spawn.
 //
-// While the list is up the panel holds the keyboard exclusively, so keys the
-// switcher does not bind (ALT+ESCAPE's pass-through included) land here and
-// are dropped instead of reaching the window underneath. Compositor binds and
-// the Lua key hook still see every key, so cycling and the ALT release work
-// as before. The watchdog bounds how long a missed release can hold the
-// keyboard.
+// The panel takes no keyboard focus. While a switch is up the Lua side holds
+// the keyboard in a submap whose catchall drops unbound keys, so nothing
+// leaks to the window underneath and focus can still move on commit.
 
 import QtQuick
 import QtQuick.Layouts
@@ -48,24 +46,26 @@ Item {
     Quickshell.execDetached(["hyprctl", "eval", "dofile(" + JSON.stringify(root.luaPath) + ")"])
   }
 
-  function render(text) {
-    let state
+  function render(json) {
+    let message
     try {
-      state = JSON.parse(text)
+      message = JSON.parse(json)
     } catch (error) {
       return // keep the last good frame
     }
-    if (!state.open) {
+    if (message.hide) {
       root.hide()
       return
     }
-    // A TAB only moves the cursor; rebuilding the rows would redo every icon
-    // and name lookup on each press.
-    if (state.snap !== root.snap) {
-      root.snap = state.snap
-      root.windows = state.windows || []
+    // The rows arrive once per switch; a TAB only moves the cursor, so the
+    // icon and name lookups are not redone on each press.
+    if (message.windows) {
+      root.snap = message.snap
+      root.windows = message.windows
+    } else if (message.snap !== root.snap) {
+      return // a step of a switch this panel never saw start
     }
-    root.selectedIndex = state.index || 0
+    root.selectedIndex = message.index || 0
     root.opened = root.windows.length > 0
     watchdog.restart()
   }
@@ -133,8 +133,9 @@ Item {
   Component.onCompleted: applyBinds()
 
   // A switch ends when ALT is released, which the Lua side sees. If that
-  // release is ever missed the panel would sit on screen holding the keyboard,
-  // so it also gives up on its own and tells the Lua side to reset.
+  // release is ever missed the switch would sit on screen with the keyboard
+  // held in its submap, so the panel gives up on its own and resets the Lua
+  // side.
   Timer {
     id: watchdog
     interval: 10000
@@ -144,24 +145,18 @@ Item {
     }
   }
 
-  // A config reload throws away runtime binds and the Lua state with them.
   Connections {
     target: Hyprland
 
     function onRawEvent(event) {
-      if (event.name !== "configreloaded") return
-      root.hide()
-      root.applyBinds()
+      if (event.name === "custom" && event.data.indexOf("omaflip:") === 0) {
+        root.render(event.data.slice(8))
+      } else if (event.name === "configreloaded") {
+        // A reload throws away runtime binds and the Lua state with them.
+        root.hide()
+        root.applyBinds()
+      }
     }
-  }
-
-  FileView {
-    path: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/omaflip.json"
-    watchChanges: true
-    printErrors: false
-    // fileChanged fires before the reread, so parse in onLoaded.
-    onFileChanged: reload()
-    onLoaded: root.render(text())
   }
 
   FileView {
@@ -192,7 +187,7 @@ Item {
     color: "transparent"
     WlrLayershell.namespace: "omaflip"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
 
     Rectangle {

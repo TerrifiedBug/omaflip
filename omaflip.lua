@@ -7,8 +7,8 @@
 -- `hyprctl eval` when the shell loads it and again after every config reload,
 -- which drops runtime binds. So evaluating it twice has to be harmless.
 --
--- This half owns all the state and all the keys. The list is drawn by the
--- panel, which renders whatever this file last wrote to STATE_PATH.
+-- This half owns all the state and all the keys. The panel draws whatever the
+-- last `omaflip:` custom event told it to.
 --
 -- Two details that make it behave like Windows rather than like `cyclenext`:
 --   * The list is snapshotted when the switch starts and then frozen, so the
@@ -17,14 +17,11 @@
 --     would drag you across workspaces on the way past.
 
 local omaflip = { windows = {}, index = 1, active = false, snap = 0 }
-
--- The panel watches this file. A write is a syscall; driving the panel over
--- `omarchy-shell` IPC cost a process spawn and ~110 ms per TAB, and two quick
--- taps could land out of order.
-local STATE_PATH = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/omaflip.json"
+local SUBMAP = "omaflip"
 
 -- Minimal JSON string escaping. Window titles are arbitrary text and routinely
--- contain quotes and backslashes.
+-- contain quotes and backslashes; control characters are escaped too, which
+-- keeps the event on one line.
 local function json_string(value)
   local escaped = tostring(value or "")
     :gsub("\\", "\\\\")
@@ -33,9 +30,15 @@ local function json_string(value)
   return '"' .. escaped .. '"'
 end
 
--- Written beside the target and renamed over it, so the panel never reads a
--- half-written file.
-local function publish()
+-- Hyprland custom events reach the shell over the event socket it already
+-- reads. Driving the panel over `omarchy-shell` IPC instead cost a process
+-- spawn and ~110 ms per TAB, and two quick taps could land out of order.
+local function send(json)
+  hl.dispatch(hl.dsp.event("omaflip:" .. json))
+end
+
+-- The rows travel once per switch; a TAB only sends the cursor.
+local function show()
   local rows = {}
   for _, window in ipairs(omaflip.windows) do
     rows[#rows + 1] = string.format(
@@ -45,23 +48,20 @@ local function publish()
       json_string(window.workspace and window.workspace.name or "")
     )
   end
-  local file = io.open(STATE_PATH .. ".tmp", "w")
-  if not file then return end
-  file:write(string.format(
-    '{"open":%s,"snap":%d,"index":%d,"windows":[%s]}',
-    tostring(omaflip.active), omaflip.snap,
-    omaflip.index - 1, -- the panel indexes from zero
-    table.concat(rows, ",")
-  ))
-  file:close()
-  os.rename(STATE_PATH .. ".tmp", STATE_PATH)
+  send(string.format('{"snap":%d,"index":%d,"windows":[%s]}',
+    omaflip.snap, omaflip.index - 1, table.concat(rows, ",")))
+end
+
+local function select()
+  send(string.format('{"snap":%d,"index":%d}', omaflip.snap, omaflip.index - 1))
 end
 
 local function teardown()
   if not omaflip.active then return end
   omaflip.active = false
   omaflip.windows = {}
-  publish()
+  hl.dispatch(hl.dsp.submap("reset"))
+  send('{"hide":true}')
 end
 
 local function commit()
@@ -105,7 +105,7 @@ local function step(delta)
   -- Already switching: just move the cursor, wrapping at both ends.
   if omaflip.active then
     omaflip.index = (omaflip.index - 1 + delta) % #omaflip.windows + 1
-    publish()
+    select()
     return
   end
 
@@ -119,7 +119,8 @@ local function step(delta)
   omaflip.index = delta % #omaflip.windows + 1
   omaflip.active = true
   omaflip.snap = omaflip.snap + 1
-  publish()
+  hl.dispatch(hl.dsp.submap(SUBMAP))
+  show()
 end
 
 -- Self-heal hook for the panel. If the ALT release is ever missed, the panel
@@ -128,16 +129,27 @@ end
 _G.__omaflip_cancel = teardown
 
 -- Omarchy binds ALT+TAB four times by default (cyclenext and bring_to_top, in
--- both directions), so both chords are cleared before rebinding. Unbinding
--- also drops this file's own binds from an earlier evaluation.
+-- both directions), so both chords are cleared before rebinding. Unbinding a
+-- chord clears it from every submap too, which drops this file's own binds
+-- from an earlier evaluation.
 hl.unbind("ALT + TAB")
 hl.unbind("ALT + SHIFT + TAB")
-hl.unbind("ALT + ESCAPE")
 hl.bind("ALT + TAB", function() step(1) end, { description = "Switch window" })
 hl.bind("ALT + SHIFT + TAB", function() step(-1) end, { description = "Switch window (reverse)" })
--- Non-consuming so ALT+ESCAPE still reaches apps when no switch is up. While
--- one is, the panel holds the keyboard, so the pass-through lands there.
-hl.bind("ALT + ESCAPE", teardown, { non_consuming = true, description = "Cancel window switch" })
+
+-- While a switch is up the keyboard belongs to it: the catchall drops every
+-- key this map does not bind, so ALT+ESCAPE and friends never reach the window
+-- underneath. Done in the compositor rather than by giving the panel keyboard
+-- focus, because Hyprland will not move window focus away from an exclusive
+-- layer and the app underneath would get a leave/enter on every switch.
+hl.define_submap(SUBMAP, function()
+  hl.unbind("ALT + ESCAPE")
+  hl.unbind("catchall")
+  hl.bind("ALT + TAB", function() step(1) end)
+  hl.bind("ALT + SHIFT + TAB", function() step(-1) end)
+  hl.bind("ALT + ESCAPE", teardown)
+  hl.bind("catchall", hl.dsp.no_op())
+end)
 
 -- Committing on ALT release cannot be a keybind. A release bind on a modifier
 -- only fires when that modifier is tapped on its own; pressing TAB in between
@@ -156,7 +168,3 @@ _G.__omaflip_keys = hl.on("input.keyboard.key", function(keycode, _, state)
     commit()
   end
 end)
-
--- A file left by a shell or compositor that died mid-switch must not reopen
--- the panel; evaluation starts closed.
-publish()
