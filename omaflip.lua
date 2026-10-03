@@ -79,12 +79,13 @@ local function commit()
 
   -- Focusing from inside the key callback updates Hyprland's idea of the
   -- active window but does not settle until the next input event, so the
-  -- switch looks like it did nothing until you tap a key again. A zero-length
-  -- timer runs the same dispatcher from the event loop instead.
+  -- switch looks like it did nothing until you tap a key again. A 1 ms timer
+  -- (the shortest Hyprland allows) runs the same dispatcher from the event
+  -- loop instead.
   if address then
     hl.timer(function()
       hl.dispatch(hl.dsp.focus({ window = "address:" .. address }))
-    end, { timeout = 0, type = "oneshot" })
+    end, { timeout = 1, type = "oneshot" })
   end
 end
 
