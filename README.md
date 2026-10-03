@@ -1,121 +1,108 @@
-# Alt-tab switcher
+# OmaFlip
 
-Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). Cycles every
-window on every workspace, ordered by most recently used.
+Windows-style `ALT`+`TAB` for [Omarchy](https://omarchy.org/). It cycles every
+window on every workspace, most recently used first.
 
-Hold `ALT`, tap `TAB` to move down the list, release `ALT` to jump to the
+Hold `ALT`, tap `TAB` to move down the list, and let go of `ALT` to jump to the
 highlighted window.
 
-![Preview](preview.png)
+Forked from Pablo Merino's
+[omarchy-altswitch](https://github.com/Pablo-Merino/omarchy-altswitch).
 
-## Behaviour
+## Keys
 
 | Keys | Action |
 | --- | --- |
-| `ALT`+`TAB` | Open the switcher and select the previous window |
-| `ALT`+`TAB` again, `ALT` still held | Move one further down the list |
+| `ALT`+`TAB` | Open the switcher on the previous window |
+| `TAB` again, `ALT` still held | Move one further down the list |
 | `ALT`+`SHIFT`+`TAB` | Move back up the list |
 | Release `ALT` | Switch to the highlighted window |
 | `ALT`+`ESCAPE` | Cancel without switching |
 
-Two things make this behave like Windows rather than like Hyprland's
-`cyclenext`:
+The list is snapshotted when the switch starts, so it can't reshuffle while
+you tab through it. Focus moves once, when you let go, so tabbing past a window
+on another workspace doesn't drag you there.
 
-- The window list is snapshotted when the switch starts and then frozen, so the
-  order cannot shuffle underneath you while you tab through it.
-- Selection is virtual. Focus moves once, when you release `ALT`. Focusing on
-  every tap would drag you across workspaces on the way past.
+While the list is up, every other key is dropped. `ALT`+`ESCAPE` cancels the
+switch and never reaches the terminal underneath.
 
-Special and scratchpad workspaces are excluded. Every monitor is included.
+Special and scratchpad workspaces are left out. Every monitor is included.
 
 ## Requirements
 
-- Omarchy Quattro, for the shell plugin system
-- Hyprland 0.56 or newer, configured in Lua
+- Omarchy 4 (Quattro shell plugins)
+- Hyprland 0.56 or newer with the Lua config
 
-No other dependencies, and nothing to install beyond this repository.
+Nothing else to install.
 
 ## Install
 
-Add the plugin and enable it:
-
 ```bash
-omarchy plugin add https://github.com/Pablo-Merino/omarchy-altswitch.git --enable
+omarchy plugin add https://github.com/TerrifiedBug/omaflip.git --enable
 ```
 
-Then load the keybindings from `~/.config/hypr/bindings.lua`:
+That's it. The plugin binds `ALT`+`TAB` itself every time the shell starts and
+after every `hyprctl reload`. You don't edit `bindings.lua`.
 
-```lua
-dofile(os.getenv("HOME") .. "/.config/omarchy/plugins/io.github.pablo-merino.altswitch/altswitch.lua")
-```
-
-Apply it with `hyprctl reload`.
-
-That line replaces Omarchy's four default `ALT`+`TAB` bindings (`cyclenext` and
-`bring_to_top`, in both directions). It unbinds them itself, so no other edit is
-needed.
+If you used omarchy-altswitch before, remove its `dofile` line from
+`~/.config/hypr/bindings.lua` and uninstall it, or the two will fight over the
+same keys after each reload.
 
 ## Settings
 
-Application icons are shown by default. Hide them with:
+App icons show by default. Turn them off with:
 
 ```bash
-omarchy-shell altswitch set showIcons false
+omarchy-shell omaflip set showIcons false
 ```
 
-| Command | Effect |
-| --- | --- |
-| `omarchy-shell altswitch set showIcons true` | Show application icons |
-| `omarchy-shell altswitch set showIcons false` | Hide application icons |
-
-Changes apply immediately and persist in the plugin's entry in
-`~/.config/omarchy/shell.json`.
-
-The equivalent manual setting is:
+The change applies straight away and lands in the plugin's entry in
+`~/.config/omarchy/shell.json`:
 
 ```json
-{ "id": "io.github.pablo-merino.altswitch", "showIcons": true }
+{ "id": "io.github.terrifiedbug.omaflip", "showIcons": false }
 ```
 
 ## Remove
 
-Delete the `dofile` line from `~/.config/hypr/bindings.lua`, then:
-
 ```bash
+omarchy plugin remove io.github.terrifiedbug.omaflip
 hyprctl reload
-omarchy plugin remove io.github.pablo-merino.altswitch
 ```
 
-Omarchy's default `ALT`+`TAB` bindings come back on the next reload.
+The reload brings back Omarchy's default `ALT`+`TAB` binds. Nothing was written
+to your Hyprland config, so there's nothing else to clean up.
 
 ## How it works
 
-The plugin is two halves that talk over Omarchy's shell IPC.
+There are two files.
 
-`altswitch.lua` runs inside Hyprland and owns all state and all keys. It reads
-the window list from `hl.get_windows()`, sorted by Hyprland's own
-`focus_history_id`, and drives the panel with `omarchy-shell altswitch
-show|select|hide`.
+`omaflip.lua` runs inside Hyprland and owns the keys and the state. It snapshots
+`hl.get_windows()` sorted by `focus_history_id`, holds the keyboard in a
+Hyprland submap while a switch is up, and spots the `ALT` release in the raw
+`input.keyboard.key` stream. A release bind on a modifier only fires when the
+modifier is tapped alone, so a bind can't do it.
 
-`AltSwitch.qml` runs inside `omarchy-shell` and only draws the list. It takes no
-keyboard focus, so it cannot trap your keyboard, and it hides itself after ten
-seconds if an `ALT` release is ever missed.
+`OmaFlip.qml` runs inside `omarchy-shell`. It loads the Lua file with
+`hyprctl eval` when the shell starts and after each config reload, then draws
+whatever the Lua side sends it. Each step travels as a Hyprland custom event
+on the event socket the shell already listens to, so a `TAB` press doesn't
+start a process.
 
-Two Hyprland details are worth knowing if you plan to modify this:
+A few details if you want to change it:
 
-- Committing on `ALT` release cannot be a keybind. A release bind on a modifier
-  only fires when that modifier is tapped alone; pressing `TAB` in between
-  cancels it. The raw `input.keyboard.key` event stream is read instead.
-- Focusing a window from inside a key callback updates Hyprland's active window
-  but does not settle until the next input event, so the focus dispatch is sent
-  through `hyprctl` from outside that callback.
+- The submap's catchall is what keeps stray keys away from the focused app. The
+  panel itself never takes keyboard focus, because Hyprland won't move window
+  focus away from a layer that holds the keyboard.
+- Focusing a window from inside the key callback doesn't settle until the next
+  input event, so the focus dispatch runs from a 1 ms Hyprland timer instead.
+- If the `ALT` release is ever missed, the panel gives up after ten seconds and
+  resets the Lua side, which also releases the keyboard.
 
 ## Known limitations
 
-- Keys that the switcher does not bind still reach the window underneath while
-  the list is open. Blocking them needs an exclusive keyboard grab, which risks
-  trapping the keyboard if a switch is ever left open.
-- There are no window thumbnails.
+- No window thumbnails.
+- No type-to-filter or mouse selection.
 
 ## License
 
