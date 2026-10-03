@@ -152,6 +152,12 @@ hl.define_submap(SUBMAP, function()
   hl.bind("catchall", hl.dsp.no_op())
 end)
 
+-- The list should be on screen the moment it is asked for, not fade in over
+-- the compositor's layer animation. Created once per Lua state.
+if not _G.__omaflip_rule then
+  _G.__omaflip_rule = hl.layer_rule({ match = { namespace = "omaflip" }, no_anim = true })
+end
+
 -- Committing on ALT release cannot be a keybind. A release bind on a modifier
 -- only fires when that modifier is tapped on its own; pressing TAB in between
 -- cancels it, which is exactly what every switch does. So the raw key stream is

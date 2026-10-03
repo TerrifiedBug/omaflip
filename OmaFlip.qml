@@ -30,6 +30,9 @@ Item {
   property var windows: []
   property int selectedIndex: 0
   property int snap: -1
+  // Set once the reveal delay has passed, so a quick ALT+TAB flip never maps
+  // the list at all.
+  property bool revealed: false
   // The panel loader hands a panel no settings, so the plugins[] entry is read
   // straight out of shell.json.
   property var pluginEntry: ({})
@@ -62,6 +65,7 @@ Item {
     if (message.windows) {
       root.snap = message.snap
       root.windows = message.windows
+      revealTimer.restart()
     } else if (message.snap !== root.snap) {
       return // a step of a switch this panel never saw start
     }
@@ -72,6 +76,8 @@ Item {
 
   function hide() {
     watchdog.stop()
+    revealTimer.stop()
+    root.revealed = false
     root.opened = false
   }
 
@@ -145,6 +151,14 @@ Item {
     }
   }
 
+  // A flip (tap TAB, let go) is over well inside this; only a held ALT shows
+  // the list. Same delay the other hold-to-reveal switchers settled on.
+  Timer {
+    id: revealTimer
+    interval: 90
+    onTriggered: root.revealed = true
+  }
+
   Connections {
     target: Hyprland
 
@@ -182,7 +196,7 @@ Item {
   PanelWindow {
     id: panel
 
-    visible: root.opened
+    visible: root.opened && root.revealed
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "omaflip"
