@@ -104,6 +104,12 @@ A few details if you want to change it:
 - No window thumbnails.
 - No type-to-filter or mouse selection.
 
+## Theme compatibility
+
+Theme colors use a namespaced `qs.Commons.Color` import to avoid Qt 6.12's
+`Color` name collision. This keeps the existing palette roles and fallbacks
+without changing the plugin's Omarchy requirements.
+
 ## License
 
 [MIT](LICENSE)

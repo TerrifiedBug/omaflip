@@ -18,6 +18,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 Item {
@@ -206,7 +207,7 @@ Item {
 
     Rectangle {
       anchors.fill: parent
-      color: Color.menu.scrim
+      color: Commons.Color.menu.scrim
     }
 
     BorderSurface {
@@ -223,8 +224,8 @@ Item {
       )
       anchors.centerIn: parent
       radius: Style.cornerRadius
-      color: Color.menu.background
-      borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.space(2)))
+      color: Commons.Color.menu.background
+      borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
       padding: Style.spacing.panelPadding
 
       ListView {
@@ -252,7 +253,7 @@ Item {
           width: list.width
           height: root.rowHeight
           radius: Style.cornerRadius
-          color: index === root.selectedIndex ? Color.menu.selectedBackground : "transparent"
+          color: index === root.selectedIndex ? Commons.Color.menu.selectedBackground : "transparent"
 
           RowLayout {
             anchors.fill: parent
@@ -266,7 +267,7 @@ Item {
               horizontalAlignment: Text.AlignRight
               textFormat: Text.PlainText
               text: modelData.workspace
-              color: Color.menu.text
+              color: Commons.Color.menu.text
               opacity: 0.5
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
@@ -289,7 +290,7 @@ Item {
               elide: Text.ElideRight
               textFormat: Text.PlainText
               text: root.friendlyAppName(modelData.appClass)
-              color: index === root.selectedIndex ? Color.menu.selectedText : Color.menu.text
+              color: index === root.selectedIndex ? Commons.Color.menu.selectedText : Commons.Color.menu.text
               opacity: 0.7
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
@@ -300,7 +301,7 @@ Item {
               elide: Text.ElideRight
               textFormat: Text.PlainText
               text: modelData.title
-              color: index === root.selectedIndex ? Color.menu.selectedText : Color.menu.text
+              color: index === root.selectedIndex ? Commons.Color.menu.selectedText : Commons.Color.menu.text
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
             }
